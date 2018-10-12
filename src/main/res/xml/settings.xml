@@ -5,6 +5,15 @@
         android:key="config_delay_time"
         android:title="@string/timer_delay_label" />
 
+    <EditTextPreference
+        android:dialogLayout="@layout/pref_dialog_edit_text"
+        android:dialogMessage="@string/config_storage_page_hint"
+        android:key="config_base_storage"
+        android:summary="@string/config_storage_page_hint"
+        android:title="@string/config_storage_path"
+        android:defaultValue="/haven"
+        android:digits="@string/path_chars"
+        />
 
     <Preference
         android:key="config_battery_optimizations"
@@ -63,7 +72,7 @@
 
         <EditTextPreference
             style="@style/AppPreference.DialogPreferenceRegister"
-            android:dialogLayout="@layout/pref_dialog_edit_text_hint"
+            android:dialogLayout="@layout/pref_dialog_edit_text_hint_signal"
             android:dialogMessage="@string/register_signal_desc"
             android:inputType="phone"
             android:key="register_signal"
@@ -89,6 +98,22 @@
             android:title="@string/notification_time"
             />
 
+    </PreferenceCategory>
+    <PreferenceCategory android:title="@string/hearbeat_monitor">
+
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            android:key="heartbeat_monitor_active"
+            android:title="@string/hearbeat_monitor_enable" />
+
+        <EditTextPreference
+            style="@style/AppPreference.DialogPreferenceSave"
+            android:dialogLayout="@layout/pref_dialog_edit_text"
+            android:dialogMessage="@string/heartbeat_time_dialog"
+            android:inputType="number"
+            android:key="heartbeat_monitor_delay"
+            android:summary="@string/hearbeat_monitor_dialog"
+            android:title="@string/hearbeat_monitor_summary"/>
 
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/remote_access">

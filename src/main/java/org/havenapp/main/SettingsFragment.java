@@ -16,19 +16,13 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.support.annotation.NonNull;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.preference.EditTextPreference;
-import android.support.v7.preference.ListPreference;
-import android.support.v7.preference.Preference;
-import android.support.v7.preference.SwitchPreferenceCompat;
 import android.text.TextUtils;
 import android.view.MenuItem;
+import android.view.View;
+import android.widget.Switch;
 import android.widget.Toast;
 
-import com.takisoft.fix.support.v7.preference.PreferenceFragmentCompat;
+import com.google.i18n.phonenumbers.PhoneNumberUtil;
 import com.wdullaer.materialdatetimepicker.time.TimePickerDialog;
 
 import org.havenapp.main.service.SignalSender;
@@ -38,19 +32,31 @@ import org.havenapp.main.ui.CameraConfigureActivity;
 import org.havenapp.main.ui.MicrophoneConfigureActivity;
 
 import java.io.File;
+import java.util.Locale;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.preference.EditTextPreference;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.SwitchPreference;
+import androidx.preference.SwitchPreferenceCompat;
 import info.guardianproject.netcipher.proxy.OrbotHelper;
+
 
 public class SettingsFragment extends PreferenceFragmentCompat implements SharedPreferences.OnSharedPreferenceChangeListener, TimePickerDialog.OnTimeSetListener {
 
     private PreferenceManager preferences;
     private HavenApp app;
-    private Activity mActivity;
+    private AppCompatActivity mActivity;
 
     @Override
-    public void onCreatePreferencesFix(Bundle bundle, String s) {
+    public void onCreatePreferences(Bundle bundle, String s) {
         addPreferencesFromResource(R.xml.settings);
-        mActivity = getActivity();
+        mActivity = (AppCompatActivity) getActivity();
         preferences = new PreferenceManager(mActivity);
         setHasOptionsMenu(true);
         app = (HavenApp) mActivity.getApplication();
@@ -82,6 +88,19 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         if (preferences.getSmsActivation()) {
             ((SwitchPreferenceCompat) findPreference(PreferenceManager.SMS_ACTIVE)).setChecked(true);
         }
+
+        findPreference(PreferenceManager.SMS_NUMBER).setOnPreferenceClickListener(preference -> {
+            if (preferences.getSmsNumber().isEmpty()) {
+                ((EditTextPreference) findPreference(PreferenceManager.SMS_NUMBER)).setText(getCountryCode());
+            }
+            return false;
+        });
+        findPreference(PreferenceManager.REGISTER_SIGNAL).setOnPreferenceClickListener(preference -> {
+            if (preferences.getSignalUsername() == null) {
+                ((EditTextPreference) findPreference(PreferenceManager.REGISTER_SIGNAL)).setText(getCountryCode());
+            }
+            return false;
+        });
 
         if (checkValidString(preferences.getSmsNumber())) {
             ((EditTextPreference) findPreference(PreferenceManager.SMS_NUMBER)).setText(preferences.getSmsNumber().trim());
@@ -118,6 +137,21 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         if (preferences.getNotificationTimeMs()>0)
         {
             findPreference(PreferenceManager.NOTIFICATION_TIME).setSummary(preferences.getNotificationTimeMs()/60000 + " " + getString(R.string.minutes));
+        }
+
+        if (preferences.getHeartbeatActive())
+        {
+            ((SwitchPreferenceCompat) findPreference(PreferenceManager.HEARTBEAT_MONITOR_ACTIVE)).setChecked(true);
+            if (preferences.getHeartbeatActive()) {
+                findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(preferences.getHeartbeatNotificationTimeMs() / 60000 + " " + getString(R.string.minutes));
+            }
+            else
+                findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(R.string.heartbeat_time_dialog);
+        }
+
+        if (preferences.getHeartbeatNotificationTimeMs()> 300000)
+        {
+            findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(preferences.getHeartbeatNotificationTimeMs() / 60000 + " " + getString(R.string.minutes));
         }
 
         Preference prefCameraSensitivity = findPreference(PreferenceManager.CAMERA_SENSITIVITY);
@@ -188,6 +222,8 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
         preferences.setActivateVideoMonitoring(videoMonitoringActive);
 
+        preferences.setSignalUsername(((EditTextPreference) findPreference(PreferenceManager.REGISTER_SIGNAL)).getText());
+
         boolean remoteAccessActive = ((SwitchPreferenceCompat) findPreference(PreferenceManager.REMOTE_ACCESS_ACTIVE)).isChecked();
 
         preferences.activateRemoteAccess(remoteAccessActive);
@@ -199,7 +235,13 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             app.startServer();
         }
 
-        mActivity.setResult(Activity.RESULT_OK);
+        preferences.setVoiceVerification(false);
+
+        boolean heartbeatMonitorActive = ((SwitchPreferenceCompat) findPreference(PreferenceManager.HEARTBEAT_MONITOR_ACTIVE)).isChecked();
+
+        preferences.activateHeartbeat(heartbeatMonitorActive);
+
+        mActivity.setResult(AppCompatActivity.RESULT_OK);
         mActivity.finish();
     }
 
@@ -288,7 +330,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             case PreferenceManager.REGISTER_SIGNAL:
                 String signalNum = ((EditTextPreference) findPreference(PreferenceManager.REGISTER_SIGNAL)).getText();
 
-                if (checkValidString(signalNum)) {
+                if (checkValidString(signalNum) && !getCountryCode().equalsIgnoreCase(signalNum)) {
                     signalNum = "+" + signalNum.trim().replaceAll("[^0-9]", "");
 
                     preferences.setSignalUsername(signalNum);
@@ -296,7 +338,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
 
                     resetSignal(preferences.getSignalUsername());
                     activateSignal(preferences.getSignalUsername(), null);
-                } else {
+                } else if (!getCountryCode().equalsIgnoreCase(signalNum)) {
                     preferences.setSignalUsername("");
                     findPreference(PreferenceManager.REGISTER_SIGNAL).setSummary(R.string.register_signal_desc);
                 }
@@ -351,7 +393,62 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 }
                 break;
             }
+            case PreferenceManager.HEARTBEAT_MONITOR_ACTIVE: {
+                boolean isMonitoring = preferences.getHeartbeatActive();
+                boolean hbSwitchOn = ((SwitchPreferenceCompat) findPreference(PreferenceManager.HEARTBEAT_MONITOR_ACTIVE)).isChecked();
+                if (!isMonitoring && hbSwitchOn) {
+                    preferences.activateHeartbeat(true);
+                    findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(preferences.getHeartbeatNotificationTimeMs() / 60000 + " " + getString(R.string.minutes));
+                    if (preferences.getMonitorServiceActive()) {
+                        SignalSender sender = SignalSender.getInstance(getActivity(), preferences.getSignalUsername());
+                        sender.startHeartbeatTimer(preferences.getHeartbeatNotificationTimeMs());
+                    }
+                } else if (!hbSwitchOn && isMonitoring) {
+                    preferences.activateHeartbeat(false);
+                    findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(R.string.hearbeat_monitor_dialog);
+                    if (preferences.getMonitorServiceActive()) {
+                        SignalSender sender = SignalSender.getInstance(getActivity(), preferences.getSignalUsername());
+                        sender.stopHeartbeatTimer();
+                    }
+                }
+                break;
+            }
+            case PreferenceManager.HEARTBEAT_MONITOR_DELAY: {
+                try {
+                    String text = ((EditTextPreference) findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY)).getText();
+                    int notificationTimeMs = Integer.parseInt(text) * 60000;
+                    if (notificationTimeMs <= 0)
+                        notificationTimeMs = 300000;
+
+                    preferences.setHeartbeatMonitorNotifications(notificationTimeMs);
+                    findPreference(PreferenceManager.HEARTBEAT_MONITOR_DELAY).setSummary(preferences.getHeartbeatNotificationTimeMs() / 60000 + " " + getString(R.string.minutes));
+
+                    boolean heartbeatActive = ((SwitchPreferenceCompat) findPreference(PreferenceManager.HEARTBEAT_MONITOR_ACTIVE)).isChecked();
+                    if (heartbeatActive && preferences.getMonitorServiceActive()) {
+                        SignalSender sender = SignalSender.getInstance(getActivity(), preferences.getSignalUsername());
+                        sender.stopHeartbeatTimer();
+                        sender.startHeartbeatTimer(preferences.getHeartbeatNotificationTimeMs());
+                    }
+                } catch (NumberFormatException ne) {
+                    //error parsing user value
+                }
+                break;
+            }
+            case PreferenceManager.CONFIG_BASE_STORAGE: {
+                setDefaultStoragePath();
+                break;
+            }
         }
+    }
+
+    String getCountryCode() {
+        PhoneNumberUtil phoneUtil = PhoneNumberUtil.getInstance();
+        return "+" + String.valueOf(phoneUtil.getCountryCodeForRegion(Locale.getDefault().getCountry()));
+    }
+
+    private void setDefaultStoragePath () {
+        String defaultStoragePath = ((EditTextPreference) findPreference(PreferenceManager.CONFIG_BASE_STORAGE)).getText();
+        preferences.setDefaultMediaStoragePath(defaultStoragePath);
     }
 
     private void setPhoneNumber() {
@@ -363,10 +460,10 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
             preferences.activateSms(false);
         }
 
-        if (checkValidString(phoneNumber)) {
+        if (checkValidString(phoneNumber) && !getCountryCode().equalsIgnoreCase(phoneNumber)) {
             preferences.setSmsNumber(phoneNumber.trim());
             findPreference(PreferenceManager.SMS_NUMBER).setSummary(phoneNumber.trim());
-        } else {
+        } else if (!getCountryCode().equalsIgnoreCase(phoneNumber)){
             preferences.setSmsNumber("");
             findPreference(PreferenceManager.SMS_NUMBER).setSummary(R.string.sms_dialog_message);
         }
@@ -414,7 +511,7 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
         SignalSender sender = SignalSender.getInstance(mActivity, username);
 
         if (TextUtils.isEmpty(verifyCode)) {
-            sender.register();
+            sender.register(preferences.getVoiceVerificationEnabled());
         } else {
             sender.verify(verifyCode);
         }
@@ -479,6 +576,15 @@ public class SettingsFragment extends PreferenceFragmentCompat implements Shared
                 intent.setData(Uri.parse("package:" + packageName));
             }
             getActivity().startActivity(intent);
+        }
+    }
+
+    public void checkCallToVerify (View v) {
+        Switch callSwitch = v.findViewById(R.id.signalCallSwitch);
+        if (callSwitch != null && callSwitch.isChecked()) {
+            preferences.setVoiceVerification(true);
+        } else {
+            preferences.setVoiceVerification(false);
         }
     }
 }

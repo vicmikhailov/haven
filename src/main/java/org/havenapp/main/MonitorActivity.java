@@ -17,14 +17,14 @@
 package org.havenapp.main;
 
 import android.Manifest;
+import android.app.PictureInPictureParams;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.Environment;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
@@ -42,6 +42,10 @@ import org.havenapp.main.ui.MicrophoneConfigureActivity;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import static org.havenapp.main.Utils.getTimerText;
 
@@ -186,10 +190,13 @@ public class MonitorActivity extends AppCompatActivity implements TimePickerDial
 
     private void doCancel() {
 
+        boolean wasTimer = false;
+
         if (cTimer != null) {
             cTimer.cancel();
             cTimer = null;
             mOnTimerTicking = false;
+            wasTimer = true;
         }
 
         if (mIsMonitoring) {
@@ -205,8 +212,23 @@ public class MonitorActivity extends AppCompatActivity implements TimePickerDial
 
             int timeM = preferences.getTimerDelay() * 1000;
             txtTimer.setText(getTimerText(timeM));
+
+            if (!wasTimer)
+                finish();
         }
 
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged (boolean isInPictureInPictureMode, Configuration newConfig) {
+        if (isInPictureInPictureMode) {
+            // Hide the full-screen UI (controls, etc.) while in picture-in-picture mode.
+            findViewById(R.id.buttonBar).setVisibility(View.GONE);
+        } else {
+            // Restore the full-screen UI.
+            findViewById(R.id.buttonBar).setVisibility(View.VISIBLE);
+
+        }
     }
 
     private void showSettings() {
@@ -233,7 +255,7 @@ public class MonitorActivity extends AppCompatActivity implements TimePickerDial
         }
         else if (requestCode == REQUEST_CAMERA)
         {
-            mFragmentCamera.resetCamera();
+            mFragmentCamera.initCamera();
         }
     }
 
@@ -276,7 +298,7 @@ public class MonitorActivity extends AppCompatActivity implements TimePickerDial
         //ensure folder exists and will not be scanned by the gallery app
 
         try {
-            File fileImageDir = new File(Environment.getExternalStorageDirectory(), preferences.getImagePath());
+            File fileImageDir = new File(Environment.getExternalStorageDirectory(), preferences.getDefaultMediaStoragePath());
             fileImageDir.mkdirs();
             new FileOutputStream(new File(fileImageDir, ".nomedia")).write(0);
         } catch (IOException e) {
@@ -288,21 +310,36 @@ public class MonitorActivity extends AppCompatActivity implements TimePickerDial
 
     }
 
-    /**
-     * Closes the monitor activity and unset session properties
-     */
-    private void close() {
 
-        finish();
-
+    @Override
+    public void onUserLeaveHint () {
+        if (mIsMonitoring) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                enterPictureInPictureMode(new PictureInPictureParams.Builder().build());
+            }
+        }
     }
-
     /**
      * When user closes the activity
      */
     @Override
     public void onBackPressed() {
-        close();
+
+        if (mIsMonitoring) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                enterPictureInPictureMode(new PictureInPictureParams.Builder().build());
+            }
+            else
+            {
+                finish();
+            }
+        }
+        else
+        {
+            finish();
+        }
+
+
     }
 
     private void showTimeDelayDialog() {

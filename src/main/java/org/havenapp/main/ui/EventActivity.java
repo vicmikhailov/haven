@@ -5,22 +5,27 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.StrictMode;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.Toolbar;
-import android.support.v7.widget.helper.ItemTouchHelper;
 import android.view.MenuItem;
 import android.view.View;
 
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.snackbar.Snackbar;
+
 import org.havenapp.main.R;
+import org.havenapp.main.Utils;
 import org.havenapp.main.model.Event;
 import org.havenapp.main.model.EventTrigger;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Locale;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 public class EventActivity extends AppCompatActivity {
 
@@ -114,9 +119,10 @@ public class EventActivity extends AppCompatActivity {
         {
             public void run ()
             {
-
-                new File(eventTrigger.getPath()).delete();
-                eventTrigger.delete();
+                if (eventTrigger != null) {
+                    new File(eventTrigger.getPath()).delete();
+                    eventTrigger.delete();
+                }
 
             }
         };
@@ -156,6 +162,10 @@ public class EventActivity extends AppCompatActivity {
         //convert from paths to Android friendly Parcelable Uri's
         for (EventTrigger trigger : mEvent.getEventTriggers())
         {
+            // ignore triggers for which we do not have valid file/file-paths
+            if (trigger.getMimeType() == null || trigger.getPath() == null)
+                continue;
+
             File fileIn = new File(trigger.getPath());
             Uri u = Uri.fromFile(fileIn);
             uris.add(u);
@@ -172,7 +182,9 @@ public class EventActivity extends AppCompatActivity {
 
         for (EventTrigger eventTrigger : mEvent.getEventTriggers()) {
 
-            mEventLog.append("Event Triggered @ ").append(eventTrigger.getTriggerTime().toString()).append("\n");
+            mEventLog.append("Event Triggered @ ").append(
+                     new SimpleDateFormat(Utils.DATE_TIME_PATTERN,
+                            Locale.getDefault()).format(eventTrigger.getTriggerTime())).append("\n");
 
             String sType = eventTrigger.getStringType(this);
 

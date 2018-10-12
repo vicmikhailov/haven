@@ -20,13 +20,9 @@ package org.havenapp.main;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v7.app.AppCompatActivity;
-
-import java.io.File;
-import java.util.ArrayList;
-
-import info.guardianproject.netcipher.proxy.OrbotHelper;
+import android.view.View;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
 
 public class SettingsActivity extends AppCompatActivity {
 
@@ -61,5 +57,9 @@ public class SettingsActivity extends AppCompatActivity {
     @Override
     public void onBackPressed() {
        mFragment.save();
+    }
+
+    public void switchClickListener(View view) {
+        mFragment.checkCallToVerify(view);
     }
 }

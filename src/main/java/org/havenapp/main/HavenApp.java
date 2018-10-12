@@ -17,17 +17,21 @@
 
 package org.havenapp.main;
 
-import android.support.multidex.MultiDexApplication;
-import android.support.v7.app.AppCompatDelegate;
-import android.text.TextUtils;
 import android.util.Log;
 
 import com.facebook.drawee.backends.pipeline.Fresco;
+import com.facebook.imagepipeline.core.ImagePipelineConfig;
+import com.facebook.imagepipeline.decoder.SimpleProgressiveJpegConfig;
+import com.orm.SchemaGenerator;
 import com.orm.SugarContext;
+import com.orm.SugarDb;
+
+import org.havenapp.main.service.WebServer;
 
 import java.io.IOException;
 
-import org.havenapp.main.service.WebServer;
+import androidx.appcompat.app.AppCompatDelegate;
+import androidx.multidex.MultiDexApplication;
 
 public class HavenApp extends MultiDexApplication {
 
@@ -43,15 +47,25 @@ public class HavenApp extends MultiDexApplication {
     public void onCreate() {
         super.onCreate();
 
+        SugarContext.init(getApplicationContext());
+
+        SchemaGenerator schemaGenerator = new SchemaGenerator(this);
+        schemaGenerator.createDatabase(new SugarDb(this).getDB());
+
         mPrefs = new PreferenceManager(this);
 
-        Fresco.initialize(this);
-        SugarContext.init(this);
+        ImagePipelineConfig config = ImagePipelineConfig.newBuilder(this)
+                .setProgressiveJpegConfig(new SimpleProgressiveJpegConfig())
+                .setResizeAndRotateEnabledForNetwork(true)
+                .setDownsampleEnabled(true)
+                .build();
+
+        Fresco.initialize(this,config);
+
         AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
 
         if (mPrefs.getRemoteAccessActive())
             startServer();
-
     }
 
 
@@ -59,10 +73,12 @@ public class HavenApp extends MultiDexApplication {
     {
         if (mOnionServer == null || (!mOnionServer.isAlive()))
         {
-            try {
-                mOnionServer = new WebServer(this, mPrefs.getRemoteAccessCredential());
-            } catch (IOException ioe) {
-                Log.e("OnioNServer", "unable to start onion server", ioe);
+            if ( mPrefs.getRemoteAccessCredential() != null) {
+                try {
+                    mOnionServer = new WebServer(this, mPrefs.getRemoteAccessCredential());
+                } catch (IOException ioe) {
+                    Log.e("OnioNServer", "unable to start onion server", ioe);
+                }
             }
         }
     }

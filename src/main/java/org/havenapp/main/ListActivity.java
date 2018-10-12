@@ -26,15 +26,6 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
-import android.support.v4.content.ContextCompat;
-import android.support.v4.graphics.drawable.DrawableCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.Toolbar;
-import android.support.v7.widget.helper.ItemTouchHelper;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -42,40 +33,45 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 
+import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.snackbar.Snackbar;
 import com.mikepenz.aboutlibraries.Libs;
 import com.mikepenz.aboutlibraries.LibsBuilder;
 
 import org.havenapp.main.model.Event;
-import org.havenapp.main.model.EventTrigger;
 import org.havenapp.main.service.SignalSender;
 import org.havenapp.main.ui.EventActivity;
 import org.havenapp.main.ui.EventAdapter;
 import org.havenapp.main.ui.PPAppIntro;
 
-import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.StringTokenizer;
 
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.Toolbar;
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.drawable.DrawableCompat;
+import androidx.recyclerview.widget.ItemTouchHelper;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 public class ListActivity extends AppCompatActivity {
 
     private RecyclerView recyclerView;
-    private FloatingActionButton fab;
-    private Toolbar toolbar;
     private EventAdapter adapter;
     private List<Event> events = new ArrayList<>();
     private PreferenceManager preferences;
 
-    private long initialCount;
-
     private int modifyPos = -1;
 
-    private int REQUEST_CODE_INTRO = 1001;
+    private final static int REQUEST_CODE_INTRO = 1001;
 
 
-    private Handler handler = new Handler();
+    final private Handler handler = new Handler();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,8 +81,8 @@ public class ListActivity extends AppCompatActivity {
 
         preferences = new PreferenceManager(this.getApplicationContext());
         recyclerView = findViewById(R.id.main_list);
-        fab = findViewById(R.id.fab);
-        toolbar = findViewById(R.id.toolbar);
+        FloatingActionButton fab = findViewById(R.id.fab);
+        Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
         LinearLayoutManager llm = new LinearLayoutManager(this);
@@ -100,7 +96,7 @@ public class ListActivity extends AppCompatActivity {
         ItemTouchHelper.SimpleCallback simpleCallback = new ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT | ItemTouchHelper.RIGHT) {
 
             @Override
-            public boolean onMove(RecyclerView recyclerView, RecyclerView.ViewHolder viewHolder, RecyclerView.ViewHolder target) {
+            public boolean onMove(@NonNull RecyclerView recyclerView, @NonNull RecyclerView.ViewHolder viewHolder, @NonNull RecyclerView.ViewHolder target) {
                 return false;
             }
 
@@ -126,12 +122,12 @@ public class ListActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
 
             Drawable drawable = ContextCompat.getDrawable(this, R.drawable.ic_play_arrow);
-            drawable = DrawableCompat.wrap(drawable);
-            DrawableCompat.setTint(drawable, Color.WHITE);
-            DrawableCompat.setTintMode(drawable, PorterDuff.Mode.SRC_IN);
-
-            fab.setImageDrawable(drawable);
-
+            if (drawable != null) {
+                drawable = DrawableCompat.wrap(drawable);
+                DrawableCompat.setTint(drawable, Color.WHITE);
+                DrawableCompat.setTintMode(drawable, PorterDuff.Mode.SRC_IN);
+                fab.setImageDrawable(drawable);
+            }
         }
 
 
@@ -145,18 +141,17 @@ public class ListActivity extends AppCompatActivity {
             }
         });
 
-        initialCount = Event.count(Event.class);
-
         if (preferences.isFirstLaunch()) {
             showOnboarding();
         }
 
-        if (initialCount > 0) {
-            findViewById(R.id.empty_view).setVisibility(View.GONE);
-        }
-
         try {
             events = Event.listAll(Event.class, "id DESC");
+
+            if (events.size() > 0) {
+                findViewById(R.id.empty_view).setVisibility(View.GONE);
+            }
+
             adapter = new EventAdapter(ListActivity.this, events);
             recyclerView.setVisibility(View.VISIBLE);
             recyclerView.setAdapter(adapter);
@@ -183,38 +178,19 @@ public class ListActivity extends AppCompatActivity {
     private void deleteEvent (final Event event, final int position)
     {
 
-        final Runnable runnableDelete = new Runnable ()
-        {
-            public void run ()
-            {
-                for (EventTrigger trigger : event.getEventTriggers())
-                {
-                    new File(trigger.getPath()).delete();
-                    trigger.delete();
-                }
+        final Runnable runnableDelete = () -> event.delete();
 
-            }
-        };
-
-        handler.postDelayed(runnableDelete,3000);
-
+        handler.postDelayed(runnableDelete,5000);
         events.remove(position);
         adapter.notifyItemRemoved(position);
 
-        event.delete();
-        initialCount -= 1;
-
-        Snackbar.make(recyclerView, "Event deleted", Snackbar.LENGTH_SHORT)
-                .setAction("UNDO", new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        handler.removeCallbacks(runnableDelete);
-                        event.save();
-                        events.add(position, event);
-                        adapter.notifyItemInserted(position);
-                        initialCount += 1;
-
-                    }
+        Snackbar.make(recyclerView, getString(R.string.event_deleted), Snackbar.LENGTH_SHORT)
+                .setAction(getString(R.string.undo), v -> {
+                    handler.removeCallbacks(runnableDelete);
+                    event.save();
+                    events.add(position, event);
+                    adapter.notifyItemInserted(position);
+                    recyclerView.scrollToPosition(position);
                 })
                 .show();
     }
@@ -251,8 +227,7 @@ public class ListActivity extends AppCompatActivity {
 
         final long newCount = Event.count(Event.class);
 
-        if (newCount > initialCount) {
-
+        if (newCount > events.size()) {
             events = Event.listAll(Event.class, "id DESC");
             adapter = new EventAdapter(ListActivity.this, events);
             recyclerView.setAdapter(adapter);
@@ -278,9 +253,6 @@ public class ListActivity extends AppCompatActivity {
             
             initialCount = newCount;
             **/
-
-            initialCount = newCount;
-
 
             recyclerView.setVisibility(View.VISIBLE);
             findViewById(R.id.empty_view).setVisibility(View.GONE);
@@ -323,6 +295,9 @@ public class ListActivity extends AppCompatActivity {
             case R.id.action_settings:
                 startActivity(new Intent(this,SettingsActivity.class));
                 break;
+            case R.id.action_remove_all_events:
+                removeAllEvents();
+                break;
             case R.id.action_about:
                 showOnboarding();
                 break;
@@ -334,6 +309,39 @@ public class ListActivity extends AppCompatActivity {
                 break;
         }
         return true;
+    }
+
+    private void removeAllEvents()
+    {
+        final List<Event> removedEvents = new ArrayList<>();
+        final Runnable runnableDelete = new Runnable ()
+        {
+            public void run ()
+            {
+                for (Event event : removedEvents) {
+                    event.delete();
+                }
+            }
+        };
+
+        for (int i = 0, size = events.size(); i < size; i++) {
+            removedEvents.add(events.remove(0));
+            adapter.notifyItemRemoved(0);
+        }
+
+        handler.postDelayed(runnableDelete, 3000);
+
+        Snackbar.make(recyclerView, getString(R.string.events_deleted), Snackbar.LENGTH_SHORT)
+                .setAction(getString(R.string.undo), v -> {
+                    handler.removeCallbacks(runnableDelete);
+
+                    for (Event event : removedEvents) {
+                        event.save();
+                        events.add(event);
+                        adapter.notifyItemInserted(events.size() - 1);
+                    }
+                })
+                .show();
     }
 
     private void showLicenses ()
