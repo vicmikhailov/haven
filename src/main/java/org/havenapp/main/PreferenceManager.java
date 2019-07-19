@@ -22,12 +22,17 @@ package org.havenapp.main;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
+import android.text.TextUtils;
 
 import org.havenapp.main.sensors.motion.LuminanceMotionDetector;
 
 import java.io.File;
 import java.util.Date;
+import java.util.Objects;
 
+import javax.annotation.Nullable;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 
@@ -55,18 +60,17 @@ public class PreferenceManager {
     public static final String CONFIG_MOVEMENT ="config_movement";
     public static final String HEARTBEAT_MONITOR_ACTIVE="heartbeat_monitor_active";
     public static final String HEARTBEAT_MONITOR_DELAY="heartbeat_monitor_delay";
+    public static final String HEARTBEAT_MONITOR_MESSAGE="heartbeat_monitor_message";
     public static final String MONITOR_SERVICE_ACTIVE="monitor_service_active";
     private static final String FLASH_ACTIVE="flash_active";
     private static final String MICROPHONE_ACTIVE="microphone_active";
     private static final String MICROPHONE_SENSITIVITY="microphone_sensitivity";
     public static final String CONFIG_SOUND = "config_sound";
     public static final String CONFIG_TIME_DELAY = "config_delay_time";
-    public static final String SMS_ACTIVE = "sms_active";
-    public static final String SMS_NUMBER = "sms_number";
     public static final String REGISTER_SIGNAL = "register_signal";
     public static final String VERIFY_SIGNAL = "verify_signal";
     public static final String VOICE_VERIFY_SIGNAL = "voice_verify_signal";
-    public static final String SEND_SMS = "send_sms";
+    public static final String RESET_SIGNAL_CONFIG = "reset_signal_config";
     private static final String UNLOCK_CODE="unlock_code";
 	
     private static final String ACCESS_TOKEN="access_token";
@@ -83,6 +87,7 @@ public class PreferenceManager {
     public static final String REMOTE_ACCESS_CRED = "remote_access_credential";
 
     private static final String SIGNAL_USERNAME = "signal_username";
+    private static final String SIGNAL_VERIFIED_USERNAME = "signal_verified_username";
 
     private static final String FIRST_LAUNCH = "first_launch";
 
@@ -94,6 +99,10 @@ public class PreferenceManager {
 
     public static final String CONFIG_BASE_STORAGE = "config_base_storage";
     private static final String CONFIG_BASE_STORAGE_DEFAULT = "/haven";
+
+    // keeping the key value same for data migration.
+    static final String REMOTE_PHONE_NUMBER = "sms_number";
+    static final String REMOTE_NOTIFICATION_ACTIVE = "remote_notification_active";
 
     private Context context;
 	
@@ -112,6 +121,16 @@ public class PreferenceManager {
         prefsEditor.commit();
     }
 
+    /**
+     * Returns the Signal username registered. This may not be a good way to check for
+     * Signal set up since this may not be verified.
+     *
+     * Usages should be checked with {@link #isSignalVerified()}
+     *
+     * @see #isSignalVerified()
+     *
+     * @return the Signal username; null when nothing is set up
+     */
     public String getSignalUsername ()
     {
         return appSharedPrefs.getString(SIGNAL_USERNAME,null);
@@ -121,6 +140,37 @@ public class PreferenceManager {
     {
         prefsEditor.putString(SIGNAL_USERNAME,signalUsername);
         prefsEditor.commit();
+    }
+
+    /**
+     * Returns the Signal username verified. This may not be a good way to check for
+     * Signal set up since this may invalidated by a call to register with a different username.
+     *
+     * Usages should be checked with {@link #isSignalVerified()}
+     *
+     * @see #isSignalVerified()
+     *
+     * @return the verified Signal username; null when no Signal username is verified even though registered.
+     */
+    @Nullable
+    public String getVerifiedSignalUsername() {
+        return appSharedPrefs.getString(SIGNAL_VERIFIED_USERNAME, null);
+    }
+
+    public void setVerifiedSignalUsername(String verifiedSignalUsername) {
+        prefsEditor.putString(SIGNAL_VERIFIED_USERNAME, verifiedSignalUsername);
+        prefsEditor.commit();
+    }
+
+    /**
+     * Checks if Signal is registered and verified for the Signal username returned by
+     * {@link #getSignalUsername()}
+     *
+     * @return true iff registered Signal username is same as that of the verified one.
+     */
+    public boolean isSignalVerified() {
+        return !TextUtils.isEmpty(getSignalUsername()) &&
+                getSignalUsername().equals(getVerifiedSignalUsername());
     }
 
     public void activateRemoteAccess (boolean active) {
@@ -241,24 +291,24 @@ public class PreferenceManager {
     public String getMicrophoneSensitivity() {
     	return appSharedPrefs.getString(MICROPHONE_SENSITIVITY, MEDIUM);
     }
-    
-    public void activateSms(boolean active) {
-    	prefsEditor.putBoolean(SMS_ACTIVE, active);
-    	prefsEditor.commit();
-    }
-    
-    public boolean getSmsActivation() {
-    	return appSharedPrefs.getBoolean(SMS_ACTIVE, false);
-    }
-    
-    public void setSmsNumber(String number) {
 
-    	prefsEditor.putString(SMS_NUMBER, number);
-    	prefsEditor.commit();
+    public void setRemoteNotificationActive(boolean isRemoteNotificationActive) {
+        prefsEditor.putBoolean(REMOTE_NOTIFICATION_ACTIVE, isRemoteNotificationActive);
+        prefsEditor.apply();
     }
-    
-    public String getSmsNumber() {
-    	return appSharedPrefs.getString(SMS_NUMBER, "");
+
+    public boolean isRemoteNotificationActive() {
+        return appSharedPrefs.getBoolean(REMOTE_NOTIFICATION_ACTIVE, false);
+    }
+
+    public void setRemotePhoneNumber(@NonNull String remotePhoneNumber) {
+        prefsEditor.putString(REMOTE_PHONE_NUMBER, remotePhoneNumber.trim());
+        prefsEditor.apply();
+    }
+
+    @NonNull
+    public String getRemotePhoneNumber() {
+        return Objects.requireNonNull(appSharedPrefs.getString(REMOTE_PHONE_NUMBER, ""));
     }
 
     public int getTimerDelay ()
@@ -305,6 +355,10 @@ public class PreferenceManager {
         return 10;
     }
 
+    public String getBaseStoragePath() {
+        return appSharedPrefs.getString(CONFIG_BASE_STORAGE,CONFIG_BASE_STORAGE_DEFAULT);
+    }
+
     public String getDefaultMediaStoragePath() {
         return appSharedPrefs.getString(CONFIG_BASE_STORAGE,CONFIG_BASE_STORAGE_DEFAULT) + File.separator + getCurrentSession(); //phoneypot is the old code name for Haven
     }
@@ -347,12 +401,32 @@ public class PreferenceManager {
         return appSharedPrefs.getInt(HEARTBEAT_MONITOR_DELAY,300000);
     }
 
+    public String getHeartbeatMonitorMessage ()
+    {
+        return appSharedPrefs.getString(HEARTBEAT_MONITOR_MESSAGE,null);
+    }
+
+    public void setHeartbeatMonitorMessage (String hearbeatMessage)
+    {
+        prefsEditor.putString(HEARTBEAT_MONITOR_MESSAGE, hearbeatMessage);
+        prefsEditor.commit();
+    }
+
+    public String getHeartbeatPrefix() {
+        return context.getString(R.string.hearbeat_monitor_initial_message_1);
+    }
+
+    public String getHeartbeatSuffix() {
+        return context.getString(R.string.hearbeat_monitor_initial_message_2);
+    }
+
+
     /**
-     * Set the {@link org.havenapp.main.model.Event#mStartTime} for the ongoing event.
+     * Set the {@link org.havenapp.main.model.Event#startTime} for the ongoing event.
      * Sets a string with the format {@link Utils#DATE_TIME_PATTERN}
      * representing current date and time for the key {@link #CURRENT_EVENT_START_TIME}.
      *
-     * @param startTime the {@link org.havenapp.main.model.Event#mStartTime} for an
+     * @param startTime the {@link org.havenapp.main.model.Event#startTime} for an
      * {@link org.havenapp.main.model.Event}
      */
     public void setCurrentSession(Date startTime) {
@@ -361,7 +435,7 @@ public class PreferenceManager {
     }
 
     /**
-     * Get the {@link org.havenapp.main.model.Event#mStartTime} for the ongoing event.
+     * Get the {@link org.havenapp.main.model.Event#startTime} for the ongoing event.
      *
      * @return the string corresponding to pref key {@link #CURRENT_EVENT_START_TIME}.
      * Default value is unknown_session.

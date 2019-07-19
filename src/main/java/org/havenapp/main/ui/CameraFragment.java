@@ -8,37 +8,43 @@
  */
 package org.havenapp.main.ui;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.Bitmap;
 import android.hardware.SensorEvent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import com.google.android.cameraview.CameraView;
+import com.otaliastudios.cameraview.Audio;
+import com.otaliastudios.cameraview.CameraView;
 
 import org.havenapp.main.PreferenceManager;
 import org.havenapp.main.R;
-import org.havenapp.main.sensors.motion.CameraViewHolder;
+import org.havenapp.main.model.EventTrigger;
 
 import androidx.fragment.app.Fragment;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 public final class CameraFragment extends Fragment {
 
     private CameraViewHolder cameraViewHolder;
     private ImageView newImage;
     private PreferenceManager prefs;
-    private TextView txtCameraStatus;
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
 
         View view = inflater.inflate(R.layout.camera_fragment, container, false);
-
         newImage = view.findViewById(R.id.new_image);
-        txtCameraStatus = view.findViewById(R.id.camera_status_display);
 
         return view;
 
@@ -63,11 +69,11 @@ public final class CameraFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-       // if (cameraViewHolder == null)
-            initCamera();
-
+        initCamera();
 
         cameraViewHolder.setMotionSensitivity(prefs.getCameraSensitivity());
+
+
     }
 
     public void updateCamera ()
@@ -84,13 +90,6 @@ public final class CameraFragment extends Fragment {
         }
     }
 
-    /**
-    public void resetCamera ()
-    {
-        stopCamera();
-        initCamera();
-    }**/
-
     public void initCamera ()
     {
 
@@ -101,29 +100,26 @@ public final class CameraFragment extends Fragment {
             //Uncomment to see the camera
 
             CameraView cameraView = getActivity().findViewById(R.id.camera_view);
+            cameraView.setAudio(Audio.OFF);
 
             if (cameraViewHolder == null) {
                 cameraViewHolder = new CameraViewHolder(getActivity(), cameraView);
 
-                cameraViewHolder.addListener((oldBitmap, newBitmap, rawBitmap, motionDetected) -> {
-                    if (motionDetected)
-                        newImage.setImageBitmap(newBitmap);
-                    else
-                        newImage.setImageResource(R.drawable.blankimage);
+                cameraViewHolder.addListener((percChanged, rawBitmap, motionDetected) -> {
 
-                    if (txtCameraStatus != null) {
-                        if (cameraViewHolder.doingVideoProcessing()) {
-                            txtCameraStatus.setText("Recording...");
-                        } else {
-                            txtCameraStatus.setText("");
-                        }
+                    if (!isDetached()) {
+                        Intent iEvent = new Intent("event");
+                        iEvent.putExtra("type", EventTrigger.CAMERA);
+                        iEvent.putExtra("detected",motionDetected);
+                        iEvent.putExtra("changed",percChanged);
+
+                        LocalBroadcastManager.getInstance(getActivity()).sendBroadcast(iEvent);
                     }
 
                 });
             }
 
         }
-
 
         cameraViewHolder.startCamera();
 

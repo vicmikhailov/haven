@@ -21,6 +21,7 @@ package org.havenapp.main;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -39,6 +40,8 @@ public class SettingsActivity extends AppCompatActivity {
             getSupportFragmentManager().beginTransaction()
                     .add(R.id.settings_fragment, mFragment)
                     .commit();
+        } else {
+            mFragment = (SettingsFragment) getSupportFragmentManager().findFragmentById(R.id.settings_fragment);
         }
 
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);

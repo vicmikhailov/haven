@@ -7,7 +7,7 @@
  * Licensed under the MIT license.
  */
 
-package org.havenapp.main.sensors.motion;
+package org.havenapp.main.ui;
 
 import android.app.Activity;
 import android.content.ComponentName;
@@ -25,11 +25,18 @@ import android.os.RemoteException;
 import android.util.Log;
 import android.view.Surface;
 
-import com.google.android.cameraview.CameraView;
+import com.otaliastudios.cameraview.CameraView;
+import com.otaliastudios.cameraview.Facing;
+import com.otaliastudios.cameraview.Frame;
+import com.otaliastudios.cameraview.FrameProcessor;
+import com.otaliastudios.cameraview.Size;
+import com.otaliastudios.cameraview.SizeSelector;
 
 import org.havenapp.main.PreferenceManager;
 import org.havenapp.main.Utils;
 import org.havenapp.main.model.EventTrigger;
+import org.havenapp.main.sensors.motion.LuminanceMotionDetector;
+import org.havenapp.main.sensors.motion.MotionDetector;
 import org.havenapp.main.service.MonitorService;
 import org.jcodec.api.android.AndroidSequenceEncoder;
 
@@ -46,9 +53,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import androidx.renderscript.RenderScript;
-
-import io.github.silvaren.easyrs.tools.Nv21Image;
+import androidx.annotation.NonNull;
 
 public class CameraViewHolder {
 
@@ -57,7 +62,8 @@ public class CameraViewHolder {
      */
     private PreferenceManager prefs;
 
-    private final static int PREVIEW_INTERVAL = 200;
+    private final static int DETECTION_INTERVAL_MS = 200;
+    private final static int MAX_CAMERA_WIDTH = 800;
 
     private List<MotionDetector.MotionListener> listeners = new ArrayList<>();
 
@@ -96,13 +102,13 @@ public class CameraViewHolder {
 	private Messenger serviceMessenger = null;
 	//private Camera camera;
 	private Activity context;
-	private MotionDetector task;
+	private MotionDetector motionDetector;
 
     AndroidSequenceEncoder encoder;
     private File videoFile;
 
     //for managing bitmap processing
-    private RenderScript renderScript;
+    //private RenderScript renderScript;
 
 	private ServiceConnection mConnection = new ServiceConnection() {
 
@@ -123,57 +129,20 @@ public class CameraViewHolder {
 		//super(context);
 		this.context = context;
 		this.cameraView = cameraView;
-        this.renderScript = RenderScript.create(context); // where context can be your activity, application, etc.
+        //this.renderScript = RenderScript.create(context); // where context can be your activity, application, etc.
 
 		prefs = new PreferenceManager(context);
 
-        task = new MotionDetector(
-                renderScript,
-                updateHandler,
+        motionDetector = new MotionDetector(
                 motionSensitivity);
 
-        task.addListener((sourceImage, detectedImage, rawBitmap, motionDetected) -> {
+        motionDetector.addListener((detectedImage, rawBitmap, motionDetected) -> {
 
             for (MotionDetector.MotionListener listener : listeners)
-                listener.onProcess(sourceImage,detectedImage,rawBitmap,motionDetected);
+                listener.onProcess(detectedImage,rawBitmap,motionDetected);
 
-            if (motionDetected) {
-
-                if (serviceMessenger != null) {
-                    Message message = new Message();
-                    message.what = EventTrigger.CAMERA;
-
-                    try {
-
-                        File fileImageDir = new File(Environment.getExternalStorageDirectory(), prefs.getDefaultMediaStoragePath());
-                        fileImageDir.mkdirs();
-
-                        String ts = new SimpleDateFormat(Utils.DATE_TIME_PATTERN,
-                                Locale.getDefault()).format(new Date());
-
-                        File fileImage = new File(fileImageDir, ts.concat(".detected.original.jpg"));
-                        FileOutputStream stream = new FileOutputStream(fileImage);
-                        rawBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
-
-                        stream.flush();
-                        stream.close();
-                        message.getData().putString("path", fileImage.getAbsolutePath());
-
-                        //store the still match frame, even if doing video
-                        serviceMessenger.send(message);
-
-                        if (prefs.getVideoMonitoringActive() && (!doingVideoProcessing)) {
-                            recordVideo();
-
-                        }
-
-                    } catch (Exception e) {
-                        // Cannot happen
-                        Log.e("CameraViewHolder", "error creating image", e);
-                    }
-                }
-            }
-
+            if (motionDetected)
+                mEncodeVideoThreadPool.execute(() -> saveDetectedImage(rawBitmap));
 
         });
 	/*
@@ -183,12 +152,49 @@ public class CameraViewHolder {
                 MonitorService.class), mConnection, Context.BIND_ABOVE_CLIENT);
 	}
 
+	private void saveDetectedImage (Bitmap rawBitmap)
+    {
+        if (serviceMessenger != null) {
+            Message message = new Message();
+            message.what = EventTrigger.CAMERA;
+
+            try {
+
+                File fileImageDir = new File(Environment.getExternalStorageDirectory(), prefs.getDefaultMediaStoragePath());
+                fileImageDir.mkdirs();
+
+                String ts = new SimpleDateFormat(Utils.DATE_TIME_PATTERN,
+                        Locale.getDefault()).format(new Date());
+
+                File fileImage = new File(fileImageDir, ts.concat(".detected.original.jpg"));
+                FileOutputStream stream = new FileOutputStream(fileImage);
+                rawBitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+
+                stream.flush();
+                stream.close();
+                message.getData().putString(MonitorService.KEY_PATH, fileImage.getAbsolutePath());
+
+                //store the still match frame, even if doing video
+                serviceMessenger.send(message);
+
+                if (prefs.getVideoMonitoringActive() && (!doingVideoProcessing)) {
+                    recordVideo();
+
+                }
+
+            } catch (Exception e) {
+                // Cannot happen
+                Log.e("CameraViewHolder", "error creating image", e);
+            }
+        }
+    }
+
 	public void setMotionSensitivity (int
 				motionSensitivity )
 				{
 				this.
 				motionSensitivity = motionSensitivity;
-				task.setMotionSensitivity(motionSensitivity);
+                    motionDetector.setMotionSensitivity(motionSensitivity);
 	}
 	
 	public void addListener(MotionDetector.MotionListener listener) {
@@ -202,28 +208,47 @@ public class CameraViewHolder {
 	 * (preferred is 640x480)
 	 * in order to minimize CPU usage
 	 */
-	public synchronized void startCamera() {
+	public void startCamera() {
 
 
         updateCamera();
 
-        cameraView.start();
+        cameraView.setPlaySounds(false);
+        cameraView.setPreviewStreamSize(new SizeSelector() {
+            @NonNull
+            @Override
+            public List<Size> select(@NonNull List<Size> source) {
+                ArrayList<Size> result = new ArrayList<>();
 
-        cameraView.setOnFrameListener((data, width, height, rotationDegrees) -> {
+                for (Size size : source)
+                {
+                    if (size.getWidth()<MAX_CAMERA_WIDTH)
+                        result.add(size);
+                }
 
-            long now = System.currentTimeMillis();
-            if (now < CameraViewHolder.this.lastTimestamp + PREVIEW_INTERVAL)
-                return;
+                return result;
+            }
+        });
+        cameraView.open();
 
-            CameraViewHolder.this.lastTimestamp = now;
+        cameraView.addFrameProcessor(new FrameProcessor() {
+            @Override
+            public void process(@NonNull Frame frame) {
 
-            if (!doingVideoProcessing) {
+                long now = System.currentTimeMillis();
+                if (now < CameraViewHolder.this.lastTimestamp + DETECTION_INTERVAL_MS)
+                    return;
 
-                Log.i("CameraViewHolder", "Processing new image");
+                CameraViewHolder.this.lastTimestamp = now;
 
-                mDecodeThreadPool.execute(() -> processNewFrame(data, width, height, rotationDegrees));
-            } else {
-                mEncodeVideoThreadPool.execute(() -> recordNewFrame(data, width, height, rotationDegrees));
+                if (frame.getData() != null && frame.getSize() != null) {
+
+                    if (!doingVideoProcessing) {
+                        mDecodeThreadPool.execute(() -> processNewFrame(frame));
+                    } else {
+                        mEncodeVideoThreadPool.execute(() -> recordNewFrame(frame));
+                    }
+                }
             }
         });
 
@@ -234,12 +259,10 @@ public class CameraViewHolder {
     {
         switch (prefs.getCamera()) {
             case PreferenceManager.FRONT:
-                if (cameraView.getFacing() != CameraView.FACING_FRONT)
-                    cameraView.setFacing(CameraView.FACING_FRONT);
+                    cameraView.setFacing(Facing.FRONT);
                 break;
             case PreferenceManager.BACK:
-                if (cameraView.getFacing() != CameraView.FACING_BACK)
-                    cameraView.setFacing(CameraView.FACING_BACK);
+                    cameraView.setFacing(Facing.BACK);
                 break;
             default:
                 //	camera = null;
@@ -272,24 +295,29 @@ public class CameraViewHolder {
 
     private Matrix mtxVideoRotate;
 
-    private void recordNewFrame (byte[] data, int width, int height, int rotationDegrees)
+    private void recordNewFrame (Frame frame)
     {
 
-        Bitmap bitmap = Nv21Image.nv21ToBitmap(renderScript, data, width, height);
+        byte[] data = frame.getData();
+        Size size = frame.getSize();
 
-        bitmap = Bitmap.createBitmap(bitmap,0,0,width,height,mtxVideoRotate,true);
+        if (data != null && size != null) {
+            int width = size.getWidth();
+            int height = size.getHeight();
+            Bitmap bitmap = MotionDetector.convertImage(data, width, height);
+            bitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, mtxVideoRotate, true);
 
-        try {
-            if (encoder != null)
-             encoder.encodeImage(bitmap);
+            try {
+                if (encoder != null)
+                    encoder.encodeImage(bitmap);
 
-            bitmap.recycle();
+                bitmap.recycle();
 
-        } catch (Exception e) {
-            e.printStackTrace();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
         }
-
-
 
     }
 
@@ -314,18 +342,24 @@ public class CameraViewHolder {
 
     }
 
-    private synchronized void processNewFrame (byte[] data, int width, int height, int rotationDegrees)
+    private void processNewFrame (Frame frame)
     {
-        task.detect(
-                lastPic,
-                data,
-                width,
-                height,
-                cameraView.getDefaultOrientation(),
-                cameraView.getFacing());
 
-        lastPic = data;
+        byte[] data = frame.getData();
+        Size size = frame.getSize();
 
+        if (data != null && size != null) {
+            int width = size.getWidth();
+            int height = size.getHeight();
+
+            motionDetector.detect(
+                    lastPic,
+                    data,
+                    width,
+                    height);
+
+            lastPic = data;
+        }
     }
 
 
@@ -349,12 +383,12 @@ public class CameraViewHolder {
 
         mtxVideoRotate = new Matrix();
 
-        if (cameraView.getFacing() == CameraView.FACING_FRONT) {
-            mtxVideoRotate.postRotate(-cameraView.getDefaultOrientation());
+        if (cameraView.getFacing() == Facing.FRONT) {
+            mtxVideoRotate.postRotate(-cameraView.getRotation());
             mtxVideoRotate.postScale(-1, 1, cameraView.getWidth() / 2, cameraView.getHeight() / 2);
         }
         else
-            mtxVideoRotate.postRotate(cameraView.getDefaultOrientation());
+           mtxVideoRotate.postRotate(cameraView.getRotation());
 
         doingVideoProcessing = true;
 
@@ -364,9 +398,6 @@ public class CameraViewHolder {
             finishVideoEncoding();
         }, seconds);
 
-        for (MotionDetector.MotionListener listener : listeners)
-            listener.onProcess(null, null, null, false);
-
         return true;
     }
 
@@ -374,13 +405,10 @@ public class CameraViewHolder {
     public synchronized void stopCamera ()
     {
         if (cameraView != null) {
-           cameraView.stop();
+           cameraView.close();
         }
     }
 
-    public int getCameraFacing() {
-        return cameraView.getFacing();
-    }
 
     public void destroy ()
     {
@@ -391,7 +419,7 @@ public class CameraViewHolder {
         stopCamera();
     }
 
-    public int getCorrectCameraOrientation(int facing, int orientation) {
+    public int getCorrectCameraOrientation(Facing facing, int orientation) {
 
         int rotation = context.getWindowManager().getDefaultDisplay().getRotation();
         int degrees = 0;
@@ -416,7 +444,7 @@ public class CameraViewHolder {
         }
 
         int result;
-        if(facing == CameraView.FACING_FRONT){
+        if(facing == Facing.FRONT){
             result = (orientation + degrees) % 360;
             result = (360 - result) % 360;
         }else{
